@@ -2,25 +2,51 @@ import json
 import ollama
 import re
 import os
+import time
+import sys
 
 # --- Configuration ---
-MODEL_NAME = 'qwen3.5:4b'             # Ensure you have run 'ollama pull mistral'
+MODEL_NAME = 'qwen3-coder-next:cloud'             # Ensure you have run 'ollama pull <model>'
 DATASET_PATH = 'Benchmark/fin_E.json' # Path to your JSONL file
-MAX_QUESTIONS = 20                 # Set to None to run the entire file
+MAX_QUESTIONS = 20                    # Set to None to run the entire file
+RESULTS_BASE_DIR = "results"          # Parent directory for all model results
+
+def sanitise_model_name(name):
+    """Replace any character that is not alphanumeric or underscore with underscore."""
+    return re.sub(r'[^a-zA-Z0-9_]', '_', name)
+
+def save_results(results_dir, results_data, summary):
+    """Save detailed results and summary to JSON files inside the results directory."""
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    details_file = os.path.join(results_dir, f"details_{timestamp}.json")
+    summary_file = os.path.join(results_dir, f"summary_{timestamp}.json")
+
+    with open(details_file, 'w', encoding='utf-8') as f:
+        json.dump(results_data, f, indent=2, ensure_ascii=False)
+
+    with open(summary_file, 'w', encoding='utf-8') as f:
+        json.dump(summary, f, indent=2)
+
+    print(f"\n[Saved] Detailed results → {details_file}")
+    print(f"[Saved] Summary → {summary_file}")
 
 def evaluate_model():
     print(f"--- ORAN-Bench Evaluation Start ---")
     print(f"Model: {MODEL_NAME}")
     print(f"File:  {DATASET_PATH}")
-    
+
+    # Sanitise model name and create results folder
+    safe_model = sanitise_model_name(MODEL_NAME)
+    results_dir = os.path.join(RESULTS_BASE_DIR, safe_model)
+    os.makedirs(results_dir, exist_ok=True)
+    print(f"Results will be saved in: {results_dir}\n")
+
+    # 1. Load dataset (JSON Lines format)
     dataset = []
-    
-    # Check if file exists
     if not os.path.exists(DATASET_PATH):
         print(f"Error: File '{DATASET_PATH}' not found.")
         return
 
-    # 1. Load the dataset (Handling JSON Lines format)
     try:
         with open(DATASET_PATH, 'r', encoding='utf-8') as file:
             for line_num, line in enumerate(file, 1):
@@ -29,7 +55,7 @@ def evaluate_model():
                     try:
                         dataset.append(json.loads(line))
                     except json.JSONDecodeError:
-                        # If a line fails, it might be an empty bracket or malformed
+                        # Skip malformed lines (e.g., empty brackets)
                         continue
     except Exception as e:
         print(f"Error reading file: {e}")
@@ -38,66 +64,114 @@ def evaluate_model():
     total_available = len(dataset)
     if MAX_QUESTIONS:
         dataset = dataset[:MAX_QUESTIONS]
-    
+
     total_to_run = len(dataset)
     print(f"Loaded {total_to_run} questions (out of {total_available} total).\n")
 
     correct_count = 0
     processed_count = 0
+    results_data = []          # store details for each question
 
-    # 2. Loop through questions
-    for i, item in enumerate(dataset):
-        # Format per README: [ "Question", ["Opt1", "Opt2", "Opt3", "Opt4"], "CorrectIndex" ]
-        question_text = item[0]
-        options = item[1]
-        correct_answer_index = str(item[2]).strip()
+    start_time = time.time()
 
-        # Construct the Prompt
-        prompt = (
-            f"Context: Open Radio Access Network (O-RAN) Technical Specification.\n"
-            f"Question: {question_text}\n"
-            f"Options:\n"
-        )
-        for idx, opt in enumerate(options):
-            prompt += f"{idx + 1}. {opt}\n"
-        
-        prompt += "\nTask: Provide ONLY the number (1, 2, 3, or 4) of the correct option. Do not explain."
+    # 2. Loop through questions (with interrupt handling)
+    try:
+        for i, item in enumerate(dataset):
+            # Validate item structure
+            if not isinstance(item, list) or len(item) < 3:
+                print(f"Skipping malformed item at index {i}: {item}")
+                continue
 
-        # 3. Call Ollama
-        try:
-            response = ollama.generate(model=MODEL_NAME, prompt=prompt)
-            raw_output = response['response'].strip()
+            question_text = item[0]
+            options = item[1]
+            correct_answer_index = str(item[2]).strip()
 
-            # 4. Extract the first digit found in the model's response
-            match = re.search(r'\d', raw_output)
-            predicted_index = match.group() if match else None
+            # Build prompt
+            prompt = (
+                f"Context: Open Radio Access Network (O-RAN) Technical Specification.\n"
+                f"Question: {question_text}\n"
+                f"Options:\n"
+            )
+            for idx, opt in enumerate(options):
+                prompt += f"{idx + 1}. {opt}\n"
+            prompt += "\nTask: Provide ONLY the number (1, 2, 3, or 4) of the correct option. Do not explain."
 
-            # 5. Compare and Log
-            is_correct = (predicted_index == correct_answer_index)
-            if is_correct:
-                correct_count += 1
-            
+            # Call Ollama
+            try:
+                response = ollama.generate(model=MODEL_NAME, prompt=prompt)
+                raw_output = response['response'].strip()
+
+                # Extract the first digit found
+                match = re.search(r'\d', raw_output)
+                predicted_index = match.group() if match else None
+
+                is_correct = (predicted_index == correct_answer_index)
+                if is_correct:
+                    correct_count += 1
+
+                # Store result
+                result_entry = {
+                    "question_index": i,
+                    "question": question_text,
+                    "options": options,
+                    "correct_index": correct_answer_index,
+                    "model_raw_output": raw_output,
+                    "predicted_index": predicted_index,
+                    "is_correct": is_correct,
+                    "error": None
+                }
+
+            except Exception as e:
+                # On error, count as incorrect
+                is_correct = False
+                result_entry = {
+                    "question_index": i,
+                    "question": question_text,
+                    "options": options,
+                    "correct_index": correct_answer_index,
+                    "model_raw_output": None,
+                    "predicted_index": None,
+                    "is_correct": False,
+                    "error": str(e)
+                }
+                print(f"Error on question {i+1}: {e}")
+
             processed_count += 1
-            
-            # Print individual result for tracking
+            results_data.append(result_entry)
+
+            # Print individual result
             status = "✓" if is_correct else f"✗ (Model said {predicted_index}, Correct was {correct_answer_index})"
             print(f"[{processed_count}/{total_to_run}] {status}")
 
-        except Exception as e:
-            print(f"Error on question {i+1}: {e}")
+    except KeyboardInterrupt:
+        print("\n\n[!] Interrupted by user. Saving results so far...")
 
-    # 6. Final Results
-    if processed_count > 0:
-        accuracy = (correct_count / processed_count) * 100
-        print("\n" + "="*30)
-        print("FINAL RESULTS")
-        print("="*30)
-        print(f"Total Evaluated: {processed_count}")
-        print(f"Correct:          {correct_count}")
-        print(f"Accuracy:         {accuracy:.2f}%")
-        print("="*30)
-    else:
-        print("No questions were processed.")
+    # 3. Final (or partial) summary
+    elapsed = time.time() - start_time
+    accuracy = (correct_count / processed_count * 100) if processed_count > 0 else 0.0
+
+    summary = {
+        "model": MODEL_NAME,
+        "dataset": DATASET_PATH,
+        "total_questions_in_file": total_available,
+        "questions_processed": processed_count,
+        "correct_answers": correct_count,
+        "accuracy_percent": round(accuracy, 2),
+        "elapsed_seconds": round(elapsed, 2),
+        "interrupted": processed_count < total_to_run
+    }
+
+    print("\n" + "="*30)
+    print("FINAL RESULTS")
+    print("="*30)
+    print(f"Total Evaluated: {processed_count}")
+    print(f"Correct:          {correct_count}")
+    print(f"Accuracy:         {accuracy:.2f}%")
+    print(f"Time:             {elapsed:.2f} s")
+    print("="*30)
+
+    # 4. Save everything
+    save_results(results_dir, results_data, summary)
 
 if __name__ == "__main__":
     evaluate_model()

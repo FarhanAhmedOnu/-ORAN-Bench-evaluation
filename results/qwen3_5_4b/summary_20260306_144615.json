@@ -1,0 +1,10 @@
+{
+  "model": "qwen3.5:4b",
+  "dataset": "Benchmark/fin_E.json",
+  "total_questions_in_file": 1139,
+  "questions_processed": 0,
+  "correct_answers": 0,
+  "accuracy_percent": 0.0,
+  "elapsed_seconds": 109.88,
+  "interrupted": true
+}

@@ -1,0 +1,10 @@
+{
+  "model": "qwen3-coder-next:cloud",
+  "dataset": "Benchmark/fin_E.json",
+  "total_questions_in_file": 1139,
+  "questions_processed": 20,
+  "correct_answers": 18,
+  "accuracy_percent": 90.0,
+  "elapsed_seconds": 41.25,
+  "interrupted": false
+}
