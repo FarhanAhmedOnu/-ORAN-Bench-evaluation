@@ -6,7 +6,7 @@ import time
 import sys
 
 # --- Configuration ---
-MODEL_NAME = 'qwen3-coder-next:cloud'             # Ensure you have run 'ollama pull <model>'
+MODEL_NAME = ''             # Ensure you have run 'ollama pull <model>'
 DATASET_PATH = 'Benchmark/fin_E.json' # Path to your JSONL file
 MAX_QUESTIONS = 20                    # Set to None to run the entire file
 RESULTS_BASE_DIR = "results"          # Parent directory for all model results
