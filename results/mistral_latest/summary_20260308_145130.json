@@ -1,0 +1,10 @@
+{
+  "model": "mistral:latest",
+  "dataset": "Benchmark/fin_E.json",
+  "total_questions_in_file": 1139,
+  "questions_processed": 20,
+  "correct_answers": 16,
+  "accuracy_percent": 80.0,
+  "elapsed_seconds": 197.37,
+  "interrupted": false
+}
