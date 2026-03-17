@@ -1,0 +1,11 @@
+{
+  "model": "qwen3-0.6b",
+  "api_base": "http://localhost:1234/v1",
+  "dataset": "Benchmark/fin_E.json",
+  "total_questions_in_file": 1139,
+  "questions_processed": 20,
+  "correct_answers": 0,
+  "accuracy_percent": 0.0,
+  "elapsed_seconds": 3.17,
+  "interrupted": false
+}

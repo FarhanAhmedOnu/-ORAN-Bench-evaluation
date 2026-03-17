@@ -1,0 +1,11 @@
+{
+  "model": "Llama-3.2-1B-Instruct-GGUF",
+  "api_base": "http://localhost:1234/v1",
+  "dataset": "Benchmark/fin_E.json",
+  "total_questions_in_file": 1139,
+  "questions_processed": 20,
+  "correct_answers": 12,
+  "accuracy_percent": 60.0,
+  "elapsed_seconds": 2.8,
+  "interrupted": false
+}
